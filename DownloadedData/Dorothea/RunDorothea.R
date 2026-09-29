@@ -3,21 +3,29 @@
 # We can then use this list as a signature for future analyses 
 # of transcriptomic data.
 
-# dorothea was installed using bioconda already
+# dorothea, readr were installed using bioconda already
 # the libraries
+# Tunabke varaibles: The dictionary of genes, the confidence levels to consider (A, B, C, D, E)
+# Outputs: Files for each TF with positive and negative signatures, a summary file, and a combined file of all signatures.
 
 # Working directoy
-proj_dir <- "/home/yukta/Yukta!/Codes/ProstateCancer"
+proj_dir <- "/home/csb/yukta/ProstateCancer/"
 
 library(dorothea)
 library(dplyr)
 library(tidyr)
 library(readr)
 
-# Create output directory with timestamp
-output_dir <-  paste0(proj_dir, "DownloadedData/Dorothea")
+# Confidence levels to include in the extracted signatures.
+# Single source of truth: changing `criteria` here updates all the filters
+# below AND the names of the output folder and files (derived from it).
+criteria <- c("A", "B", "C", "D")  # can modify this to include other levels if needed
+criteria_label <- paste0(criteria, collapse = "")  # e.g. "ABC"
+
+# Output folder named after the criteria (e.g. Dorothea-ABC)
+output_dir <-  file.path(proj_dir, "DownloadedData", "Dorothea", paste0("Dorothea-", criteria_label))
 if (!dir.exists(output_dir)) {
-  dir.create(output_dir)
+  dir.create(output_dir, recursive = TRUE)
   cat("Created output directory:", output_dir, "\n")
 }
 
@@ -28,27 +36,33 @@ data("dorothea_hs", package = "dorothea")
 # The coloquial name used in the study may differ from the proper gene name 
 # So create a dictionary
 tf_dict <- list(
-  "OCT4" = "POU5F1",
-  "LIN28" = "LIN28A",  # Also consider LIN28B if needed
+  "OCT4" = "POU5F1",# Also consider LIN28B if needed
   "P63" = "TP63",
   "NKX3-1" = "NKX3-1",  # Prostate-specific homeobox gene
   "NANOG" = "NANOG",
   "SOX2" = "SOX2",
   "AR" = "AR",  # Androgen receptor
   "GATA2" = "GATA2",
-  "FOXA1" = "FOXA1"
+  "FOXA1" = "FOXA1",
+  "BACH1" = "BACH1",
+  "HIF1A" = "HIF1A"
 )
-
+# other TFs that could be considered: BACH1, HIF1A
+# Define levels   A: best, E:worst``
+# We will take A, B
+criteria <- c("A", "B")
 # Function to call for each TF gene
-get_tf_signatures <- function(tf_name) {
+# `criteria` controls which confidence levels are included
+get_tf_signatures <- function(tf_name, criteria) {
   tf_network <- dorothea_hs |>
     dplyr::filter(
       tf == tf_name,
-      confidence %in% c("A", "B", "C", "D", "E")  # Include all confidence levels
+      confidence %in% criteria  # confidence levels set by the `criteria` variable
     )
-  
+  # check if the name is valid i.e there should be at least some interactions
   if (nrow(tf_network) == 0) {
-    warning("No interactions found for ", tf_name, " in dorothea database.")
+    warning("No interactions found for ", tf_name, " at confidence levels: ",
+            paste(criteria, collapse = ", "), " in dorothea database.")
     return(list(
       TF = tf_name,
       positive_signature = character(0),
@@ -86,7 +100,7 @@ for (tf_name in names(tf_dict)) {
   gene_name <- tf_dict[[tf_name]]
   cat("Processing", tf_name, "(", gene_name, ")\n")
   
-  signatures <- get_tf_signatures(gene_name)
+  signatures <- get_tf_signatures(gene_name, criteria)
   all_signatures[[tf_name]] <- signatures
   
   # Save positive signatures
@@ -98,7 +112,7 @@ for (tf_name in names(tf_dict)) {
     )
     write.csv(
       positive_df,
-      file.path(output_dir, paste0(gene_name, "_positive_signatures.csv")),
+      file.path(output_dir, paste0(gene_name, "_DoRothEA_", criteria_label, "_positive_signatures.csv")),
       row.names = FALSE
     )
   }
@@ -112,7 +126,7 @@ for (tf_name in names(tf_dict)) {
     )
     write.csv(
       negative_df,
-      file.path(output_dir, paste0(gene_name, "_negative_signatures.csv")),
+      file.path(output_dir, paste0(gene_name, "_DoRothEA_", criteria_label, "_negative_signatures.csv")),
       row.names = FALSE
     )
   }
@@ -121,7 +135,7 @@ for (tf_name in names(tf_dict)) {
   complete_table <- dorothea_hs |>
     dplyr::filter(
       tf == gene_name,
-      confidence %in% c("A", "B")
+      confidence %in% criteria
     ) |>
     dplyr::transmute(
       TF = tf,
@@ -134,7 +148,7 @@ for (tf_name in names(tf_dict)) {
   
   write.csv(
     complete_table,
-    file.path(output_dir, paste0(gene_name, "_DoRothEA_AB_signatures.csv")),
+    file.path(output_dir, paste0(gene_name, "_DoRothEA_", criteria_label, "_signatures.csv")),
     row.names = FALSE
   )
 }
@@ -237,7 +251,7 @@ if (nrow(all_signatures_df) > 0) {
 
 cat("\n=== Script Execution Complete ===\n")
 cat("Files created:\n")
-cat("1. Individual CSVs for each TF (positive/negative/complete)\n")
+cat("1. Individual CSVs for each TF (DoRothEA ", criteria_label, ": positive/negative/complete)\n", sep = "")
 cat("2. TF_signatures_summary.csv - Summary of all TFs\n")
 cat("3. TF_signatures_results.RData - Complete R object\n")
 cat("4. all_TF_signatures_combined.csv - All signatures in one file\n")
